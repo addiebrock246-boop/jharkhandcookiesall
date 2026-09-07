@@ -1,0 +1,457 @@
+import pickle
+import time
+import requests
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.firefox.service import Service
+from selenium.webdriver.firefox.options import Options as FirefoxOptions
+from selenium.webdriver.firefox.firefox_profile import FirefoxProfile
+from selenium.common.exceptions import TimeoutException, NoAlertPresentException
+from webdriver_manager.firefox import GeckoDriverManager
+import sys
+
+# ==========================================
+# Configuration
+MAIN_LOGIN_URL = "https://jharnibandhan.gov.in/Citizenentry/citizenlogin"
+MAIN_DASHBOARD_URL = "https://jharnibandhan.gov.in/Citizenentry/welcome"
+FINANCE_LOGIN_URL = "https://finance.jharkhand.gov.in/jegras/DepartmentLogin.aspx"
+FINANCE_OTP_URL = "https://finance.jharkhand.gov.in/jegras/DepartmentLoginOtpverify.aspx"
+SBI_EPAY_URL = "https://epay.sbi.bank.in/secure/AggregatorHostedListener"
+
+MAIN_COOKIE_FILE = "session_data.pkl"
+FINANCE_COOKIE_FILE = "finance_session_data.pkl"
+USER_AGENT_FILE = "user_agent.txt"
+PROFILE_PATH = r"C:\Users\admin\AppData\Roaming\Mozilla\Firefox\Profiles\tz38mt81.default-release"
+
+FINANCE_USERNAME = "rishavsingh20068@gmail.com"
+FINANCE_PASSWORD = "Rishu@123"
+# ==========================================
+
+# ---------- Save Functions (Exactly as in working code) ----------
+def save_main_cookies(driver):
+    cookies = driver.get_cookies()
+    clean_cookies = []
+    for c in cookies:
+        clean = {
+            'name': c['name'],
+            'value': c['value'],
+            'domain': c.get('domain', 'jharnibandhan.gov.in'),
+            'path': c.get('path', '/'),
+            'secure': c.get('secure', False),
+            'httpOnly': c.get('httpOnly', False),
+            'sameSite': c.get('sameSite', 'no_restriction'),
+        }
+        if 'expiry' in c and c['expiry']:
+            clean['expirationDate'] = float(c['expiry'])
+        clean_cookies.append(clean)
+    local_storage = driver.execute_script("return {...localStorage};")
+    session_storage = driver.execute_script("return {...sessionStorage};")
+    data = {'cookies': clean_cookies, 'localStorage': local_storage, 'sessionStorage': session_storage}
+    with open(MAIN_COOKIE_FILE, "wb") as f:
+        pickle.dump(data, f)
+    print("✅ Main Cookies सेव हो गईं")
+
+def save_finance_cookies(driver):
+    cookies = driver.get_cookies()
+    clean_cookies = []
+    for c in cookies:
+        clean = {
+            'name': c['name'],
+            'value': c['value'],
+            'domain': c.get('domain', 'finance.jharkhand.gov.in'),
+            'path': c.get('path', '/'),
+            'secure': c.get('secure', False),
+            'httpOnly': c.get('httpOnly', False),
+            'sameSite': c.get('sameSite', 'no_restriction'),
+        }
+        if 'expiry' in c and c['expiry']:
+            clean['expirationDate'] = float(c['expiry'])
+        clean_cookies.append(clean)
+    local_storage = driver.execute_script("return {...localStorage};")
+    session_storage = driver.execute_script("return {...sessionStorage};")
+    data = {'cookies': clean_cookies, 'localStorage': local_storage, 'sessionStorage': session_storage}
+    with open(FINANCE_COOKIE_FILE, "wb") as f:
+        pickle.dump(data, f)
+    print("✅ Finance Cookies सेव हो गईं")
+
+# ---------- Option 2: Main Auto-Login (Original Working Logic) ----------
+def open_browser_with_main_cookies():
+    """🦊 बिल्कुल वैसा ही जैसा Working Code में है – original open_browser_with_cookies"""
+    print("🦊 Firefox खोल रहा हूँ (Original Main Logic)...")
+    options = FirefoxOptions()
+    options.set_preference("security.mixed_content.block_active_content", False)
+    options.set_preference("security.mixed_content.block_display_content", False)
+    options.set_preference("dom.security.https_only_mode", False)
+    options.set_preference("dom.security.https_only_mode_ever_enabled", False)
+    try:
+        with open(USER_AGENT_FILE, "r") as f:
+            ua = f.read().strip()
+        if ua:
+            options.set_preference("general.useragent.override", ua)
+    except:
+        pass
+    try:
+        profile = FirefoxProfile(PROFILE_PATH)
+        options.profile = profile
+    except Exception as e:
+        print(f"⚠️ Profile Load Error: {e}")
+
+    driver = webdriver.Firefox(service=Service(GeckoDriverManager().install()), options=options)
+    driver.maximize_window()
+    driver.get(MAIN_LOGIN_URL)
+    time.sleep(2)
+    driver.delete_all_cookies()
+    print("🗑️ पुरानी Cookies Delete कर दी गईं।")
+
+    # ---------- 🔥 Original Injection (बिल्कुल Working Code जैसा) ----------
+    try:
+        with open(MAIN_COOKIE_FILE, "rb") as f:
+            data = pickle.load(f)
+        cookies = data.get('cookies', [])
+        local_storage = data.get('localStorage', {})
+        session_storage = data.get('sessionStorage', {})
+
+        for cookie in cookies:
+            clean_cookie = {}
+            clean_cookie['name'] = cookie['name']
+            clean_cookie['value'] = cookie['value']
+            clean_cookie['domain'] = cookie.get('domain', 'jharnibandhan.gov.in')
+            clean_cookie['path'] = cookie.get('path', '/')
+            if cookie.get('secure', False):
+                clean_cookie['secure'] = True
+            if cookie.get('httpOnly', False):
+                clean_cookie['httpOnly'] = True
+            if cookie.get('sameSite'):
+                clean_cookie['sameSite'] = cookie['sameSite'].lower()
+            else:
+                clean_cookie['sameSite'] = 'no_restriction'
+            if 'expirationDate' in cookie and cookie['expirationDate']:
+                clean_cookie['expiry'] = int(cookie['expirationDate'])
+            elif 'expiry' in cookie and cookie['expiry']:
+                clean_cookie['expiry'] = int(cookie['expiry'])
+            try:
+                driver.add_cookie(clean_cookie)
+                print(f"✅ Cookie Added: {clean_cookie['name']}")
+            except Exception as e:
+                print(f"⚠️ कुकी Add नहीं हुई ({clean_cookie.get('name')}): {e}")
+                if 'sameSite' in clean_cookie:
+                    del clean_cookie['sameSite']
+                    try:
+                        driver.add_cookie(clean_cookie)
+                        print(f"✅ Cookie Added (Fallback): {clean_cookie['name']}")
+                    except Exception as e2:
+                        print(f"❌ Fallback भी Fail: {e2}")
+
+        print(f"✅ {len(cookies)} कुकीज़ Selenium से Inject हुईं।")
+        if local_storage:
+            for key, val in local_storage.items():
+                driver.execute_script(f"localStorage.setItem('{key}', '{val}');")
+        if session_storage:
+            for key, val in session_storage.items():
+                driver.execute_script(f"sessionStorage.setItem('{key}', '{val}');")
+    except FileNotFoundError:
+        print("❌ डेटा नहीं मिला। पहले Option 3 से Fresh Login करें।")
+        driver.quit()
+        return None
+
+    driver.get(MAIN_DASHBOARD_URL)
+    time.sleep(4)
+    current_url = driver.current_url
+    print(f"📍 Current URL: {current_url}")
+    if "citizenlogin" in current_url:
+        print("⚠️ Session expired. Run Option 3 to refresh.")
+        driver.quit()
+        return None
+    elif "/welcome" in current_url or "welcome" in current_url:
+        print("🎉 Main Auto-Login successful!")
+        return driver
+    else:
+        print(f"⚠️ Unexpected URL: {current_url}")
+        driver.quit()
+        return None
+
+# ---------- Helper functions ----------
+def click_pay_now_button(driver):
+    selectors = [
+        "//button[contains(text(),'Pay Now')]",
+        "//input[@value='Pay Now']",
+        "//button[@id='payNow']",
+        "//*[@id='payNow']",
+        "//input[@type='submit' and @value='Pay Now']",
+    ]
+    for sel in selectors:
+        try:
+            el = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, sel)))
+            el.click()
+            print(f"✅ Pay Now clicked: {sel}")
+            return True
+        except:
+            continue
+    print("❌ Pay Now not found.")
+    return False
+
+def tick_checkboxes(driver):
+    try:
+        driver.execute_script("""
+            var cb = document.getElementById('chkterms');
+            if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change', {bubbles: true})); }
+            var cb2 = document.getElementById('takenBefore');
+            if (cb2) { cb2.checked = true; cb2.dispatchEvent(new Event('change', {bubbles: true})); }
+        """)
+        return True
+    except:
+        return False
+
+def handle_mandate_page(driver):
+    try:
+        WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.ID, "chkterms")))
+        print("✅ Mandate page loaded.")
+        if not tick_checkboxes(driver):
+            return False
+        try:
+            modal = WebDriverWait(driver, 5).until(EC.visibility_of_element_located((By.ID, "myModal")))
+            btns = modal.find_elements(By.CSS_SELECTOR, "button, input[type='submit']")
+            for btn in btns:
+                if btn.is_displayed() and btn.is_enabled():
+                    if btn.text.strip() or btn.get_attribute("value"):
+                        btn.click()
+                        print(f"✅ Clicked: {btn.text.strip() or btn.get_attribute('value')}")
+                        break
+            WebDriverWait(driver, 10).until(EC.invisibility_of_element_located((By.ID, "myModal")))
+        except:
+            driver.execute_script("document.getElementById('form1').submit();")
+        time.sleep(2)
+        WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.ID, "txtLoginId")))
+        print("✅ Login page reached.")
+        return True
+    except:
+        print("⚠️ Mandate handling failed or already passed.")
+        return "DepartmentLogin" in driver.current_url
+
+# ---------- Option 3: Complete Fresh Setup (Main + Finance) ----------
+def fresh_setup_both():
+    print("🚀 Complete Fresh Setup शुरू...")
+    options = FirefoxOptions()
+    options.set_preference("security.mixed_content.block_active_content", False)
+    options.set_preference("security.mixed_content.block_display_content", False)
+    options.set_preference("dom.security.https_only_mode", False)
+    options.set_preference("dom.security.https_only_mode_ever_enabled", False)
+    options.page_load_strategy = 'eager'
+    try:
+        profile = FirefoxProfile(PROFILE_PATH)
+        options.profile = profile
+    except Exception as e:
+        print(f"⚠️ Profile Load Error: {e}")
+
+    driver = webdriver.Firefox(service=Service(GeckoDriverManager().install()), options=options)
+    driver.maximize_window()
+
+    # Step 1: Main Login (Manual)
+    print("\n📌 Step 1: Main Site Login")
+    driver.get(MAIN_LOGIN_URL)
+    time.sleep(1)
+    input("⏳ Main Login करके /welcome पर Enter दबाएँ...")
+    if "/welcome" not in driver.current_url:
+        print("❌ Main Login Fail")
+        driver.quit()
+        return
+    save_main_cookies(driver)
+
+    # Step 2: Payment flow
+    print("\n📌 Step 2: Payment Services → Purchase eStamp")
+    try:
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.PARTIAL_LINK_TEXT, "Payment Services")))
+        driver.find_element(By.PARTIAL_LINK_TEXT, "Payment Services").click()
+        time.sleep(1)
+        driver.find_element(By.PARTIAL_LINK_TEXT, "Purchase eStamp Paper").click()
+        time.sleep(3)
+        print("✅ GRAS page reached.")
+    except Exception as e:
+        print(f"❌ Payment error: {e}")
+        driver.quit()
+        return
+
+    print("\n📌 Step 3: Pay Now")
+    if not click_pay_now_button(driver):
+        driver.quit()
+        return
+
+    print("\n📌 Step 4: Mandate Page")
+    if not handle_mandate_page(driver):
+        print("❌ Mandate failed")
+        driver.quit()
+        return
+
+    # Step 5: Finance Login (Manual)
+    print("\n📌 Step 5: Finance Site Login")
+    if "DepartmentLogin" not in driver.current_url:
+        driver.get(FINANCE_LOGIN_URL)
+        time.sleep(1)
+
+    try:
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "txtLoginId")))
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "txtPassword")))
+        print("⏳ Tampermonkey will fill username/password – now fill CAPTCHA and click login.")
+        input("⏳ CAPTCHA भरकर Login करें – फिर OTP Page पर Enter दबाएँ...")
+        print("⏳ OTP और CAPTCHA भरें – फिर SBI ePay पर पहुँचने पर Enter दबाएँ...")
+        input("⏳ OTP/CAPTCHA भरकर Submit करें – SBI ePay पर Enter दबाएँ...")
+        save_finance_cookies(driver)
+        print("🎉 Setup Complete! Both cookies saved.")
+    except Exception as e:
+        print(f"❌ Finance error: {e}")
+
+    input("Press Enter to close browser...")
+    driver.quit()
+
+# ---------- Option 4: Full Automation (Original Logic for both) ----------
+def full_automation():
+    print("🚀 Full Automation शुरू...")
+    # ----- Main Site using original working logic (exact same as Option 2) -----
+    driver = open_browser_with_main_cookies()
+    if not driver:
+        print("❌ Main login failed. Run Option 3 first.")
+        return
+
+    # Payment flow (Main)
+    try:
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.PARTIAL_LINK_TEXT, "Payment Services")))
+        driver.find_element(By.PARTIAL_LINK_TEXT, "Payment Services").click()
+        time.sleep(1)
+        driver.find_element(By.PARTIAL_LINK_TEXT, "Purchase eStamp Paper").click()
+        time.sleep(3)
+    except Exception as e:
+        print(f"❌ Payment error: {e}")
+        driver.quit()
+        return
+
+    if not click_pay_now_button(driver):
+        driver.quit()
+        return
+
+    if not handle_mandate_page(driver):
+        print("❌ Mandate handling failed on Main site.")
+        driver.quit()
+        return
+
+    # ----- Finance Site using same original injection logic (exact copy) -----
+    try:
+        # Go to finance login page, delete old cookies, inject finance cookies using same logic
+        driver.get(FINANCE_LOGIN_URL)
+        time.sleep(1)
+        driver.delete_all_cookies()
+        print("🗑️ Finance cookies delete कर दी गईं।")
+
+        # ---------- 🔥 Inject Finance Cookies (बिल्कुल Main जैसा) ----------
+        try:
+            with open(FINANCE_COOKIE_FILE, "rb") as f:
+                data = pickle.load(f)
+            cookies = data.get('cookies', [])
+            for cookie in cookies:
+                clean_cookie = {}
+                clean_cookie['name'] = cookie['name']
+                clean_cookie['value'] = cookie['value']
+                clean_cookie['domain'] = cookie.get('domain', 'finance.jharkhand.gov.in')
+                clean_cookie['path'] = cookie.get('path', '/')
+                if cookie.get('secure', False):
+                    clean_cookie['secure'] = True
+                if cookie.get('httpOnly', False):
+                    clean_cookie['httpOnly'] = True
+                if cookie.get('sameSite'):
+                    clean_cookie['sameSite'] = cookie['sameSite'].lower()
+                else:
+                    clean_cookie['sameSite'] = 'no_restriction'
+                if 'expirationDate' in cookie and cookie['expirationDate']:
+                    clean_cookie['expiry'] = int(cookie['expirationDate'])
+                elif 'expiry' in cookie and cookie['expiry']:
+                    clean_cookie['expiry'] = int(cookie['expiry'])
+                try:
+                    driver.add_cookie(clean_cookie)
+                except Exception as e:
+                    if 'sameSite' in clean_cookie:
+                        del clean_cookie['sameSite']
+                        try:
+                            driver.add_cookie(clean_cookie)
+                        except:
+                            pass
+            print(f"✅ {len(cookies)} Finance Cookies Inject हुईं (Original Logic).")
+        except FileNotFoundError:
+            print("❌ Finance cookies file not found. Run Option 3 first.")
+            driver.quit()
+            return
+
+        # Now navigate to OTP page (this will check session)
+        driver.get(FINANCE_OTP_URL)
+        time.sleep(3)
+
+        # Check if any mandate/popup appears on finance side
+        if "Mandate for Depositor/Payee Identification" in driver.page_source or "जमाकर्ता/आदाता की पहचान" in driver.page_source:
+            print("📌 Finance Mandate/Popup detected. Handling...")
+            if not handle_mandate_page(driver):
+                print("❌ Finance popup handling failed.")
+                driver.quit()
+                return
+            # After handling, go back to OTP
+            driver.get(FINANCE_OTP_URL)
+            time.sleep(3)
+
+        # Final check
+        if "epay.sbi" in driver.current_url:
+            print("✅ SBI ePay reached!")
+        elif "LoginOtpverify" in driver.current_url:
+            print("✅ OTP page – waiting for auto-fill...")
+            try:
+                WebDriverWait(driver, 60).until(EC.url_contains("epay.sbi"))
+                print("✅ OTP submitted, reached SBI ePay.")
+            except:
+                print("⚠️ OTP timeout – maybe manual needed.")
+        else:
+            print(f"⚠️ Unexpected URL: {driver.current_url}")
+            if "Mandate" in driver.page_source:
+                print("🔄 Retrying mandate handling...")
+                if handle_mandate_page(driver):
+                    driver.get(FINANCE_OTP_URL)
+                    time.sleep(2)
+                    if "epay.sbi" in driver.current_url:
+                        print("✅ SBI ePay reached after retry!")
+                    else:
+                        print("❌ Still not reached SBI. Manual intervention may be needed.")
+    except Exception as e:
+        print(f"❌ Finance error: {e}")
+
+    print("🎉 Full Automation Complete!")
+    input("Press Enter to close...")
+    driver.quit()
+
+# ---------- Option 2: Main Only (Shortcut) ----------
+def option2_main_only():
+    driver = open_browser_with_main_cookies()
+    if driver:
+        input("Press Enter to close browser...")
+        driver.quit()
+
+# ---------- Menu ----------
+if __name__ == "__main__":
+    print("🚀 Jharkhand Session Manager (Final – Original Logic Everywhere)")
+    print("1️⃣  Status Check (बिना Browser)")
+    print("2️⃣  Auto-Login (Main only – Original Logic)")
+    print("3️⃣  Complete Fresh Setup (Main + Finance Cookies)")
+    print("4️⃣  Full Automation (All Steps – Original Logic for both)")
+    choice = input("👉 चुनाव (1/2/3/4): ")
+
+    if choice == "1":
+        try:
+            with open(MAIN_COOKIE_FILE, "rb"): print("✅ Main Cookies exist")
+        except: print("❌ Main Cookies missing")
+        try:
+            with open(FINANCE_COOKIE_FILE, "rb"): print("✅ Finance Cookies exist")
+        except: print("❌ Finance Cookies missing")
+    elif choice == "2":
+        option2_main_only()
+    elif choice == "3":
+        fresh_setup_both()
+    elif choice == "4":
+        full_automation()
+    else:
+        print("❌ Invalid choice.")
